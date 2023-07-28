@@ -125,8 +125,8 @@ class ExtendedTabBarView extends StatefulWidget {
 class ExtendedTabBarViewState extends LinkScrollState<ExtendedTabBarView> {
   TabController? _controller;
   late LinkPageController _pageController;
-  List<Widget>? _children;
-  List<Widget>? _childrenWithKey;
+  late List<Widget> _children;
+  late List<Widget> _childrenWithKey;
   int? _currentIndex;
   int _warpUnderwayCount = 0;
 
@@ -194,12 +194,12 @@ class ExtendedTabBarViewState extends LinkScrollState<ExtendedTabBarView> {
 
   @override
   void didUpdateWidget(ExtendedTabBarView oldWidget) {
-    if (widget.controller != oldWidget.controller) {
-      _updateTabController();
-      _currentIndex = _controller?.index;
+
+    if (widget.children != oldWidget.children && _warpUnderwayCount == 0){
+      _updateChildren();
     }
     if ((widget.pageController != null &&
-            widget.pageController != oldWidget.pageController) ||
+        widget.pageController != oldWidget.pageController) ||
         widget.viewportFraction != oldWidget.viewportFraction) {
       _pageController = widget.pageController ??
           LinkPageController(
@@ -207,12 +207,17 @@ class ExtendedTabBarViewState extends LinkScrollState<ExtendedTabBarView> {
             viewportFraction: widget.viewportFraction,
           );
     }
+    if (widget.controller != oldWidget.controller) {
+      _updateTabController();
+      _currentIndex = _controller!.index;
+      _warpUnderwayCount += 1;
+      _pageController.jumpToPage(_currentIndex!);
+      _warpUnderwayCount -= 1;
 
+    }
     if (widget.physics != oldWidget.physics) {
       updatePhysics();
     }
-    if (widget.children != oldWidget.children && _warpUnderwayCount == 0)
-      _updateChildren();
 
     if (oldWidget.scrollDirection != widget.scrollDirection ||
         oldWidget.physics != widget.physics) {
@@ -250,15 +255,28 @@ class ExtendedTabBarViewState extends LinkScrollState<ExtendedTabBarView> {
       return Future<void>.value();
     }
 
-    if (_pageController.page == _currentIndex!.toDouble())
+    if (_pageController.page == _currentIndex!.toDouble()) {
       return Future<void>.value();
+    }
 
+    final Duration duration = _controller!.animationDuration;
     final int previousIndex = _controller!.previousIndex;
+
     if ((_currentIndex! - previousIndex).abs() == 1) {
+      if (duration == Duration.zero) {
+        _pageController.jumpToPage(_currentIndex!);
+        return Future<void>.value();
+      }
       _warpUnderwayCount += 1;
-      await _pageController.animateToPage(_currentIndex!,
-          duration: kTabScrollDuration, curve: Curves.ease);
+      await _pageController.animateToPage(
+          _currentIndex!, duration: duration, curve: Curves.ease);
       _warpUnderwayCount -= 1;
+
+      if (mounted && widget.children != _children) {
+        setState(() {
+          _updateChildren();
+        });
+      }
       return Future<void>.value();
     }
 
@@ -266,22 +284,28 @@ class ExtendedTabBarViewState extends LinkScrollState<ExtendedTabBarView> {
     final int initialPage = _currentIndex! > previousIndex
         ? _currentIndex! - 1
         : _currentIndex! + 1;
-    final List<Widget>? originalChildren = _childrenWithKey;
+    final List<Widget> originalChildren = _childrenWithKey;
     setState(() {
       _warpUnderwayCount += 1;
 
-      _childrenWithKey = List<Widget>.from(_childrenWithKey!, growable: false);
-      final Widget temp = _childrenWithKey![initialPage];
-      _childrenWithKey![initialPage] = _childrenWithKey![previousIndex];
-      _childrenWithKey![previousIndex] = temp;
+      _childrenWithKey = List<Widget>.of(_childrenWithKey, growable: false);
+      final Widget temp = _childrenWithKey[initialPage];
+      _childrenWithKey[initialPage] = _childrenWithKey[previousIndex];
+      _childrenWithKey[previousIndex] = temp;
     });
     _pageController.jumpToPage(initialPage);
 
-    await _pageController.animateToPage(_currentIndex!,
-        duration: kTabScrollDuration, curve: Curves.ease);
-    if (!mounted) {
-      return Future<void>.value();
+    if (duration == Duration.zero) {
+      _pageController.jumpToPage(_currentIndex!);
+    } else {
+      await _pageController.animateToPage(
+          _currentIndex!, duration: duration, curve: Curves.ease);
+
+      if (!mounted) {
+        return Future<void>.value();
+      }
     }
+
     setState(() {
       _warpUnderwayCount -= 1;
       if (widget.children != _children) {
@@ -359,15 +383,18 @@ class ExtendedTabBarViewState extends LinkScrollState<ExtendedTabBarView> {
       onNotification: _handleScrollNotification,
       child: NotificationListener<OverscrollIndicatorNotification>(
         onNotification: _handleGlowNotification,
-        child: ExtendedPageView(
+        child: ExtendedPageView.builder(
           dragStartBehavior: widget.dragStartBehavior,
           controller: _pageController,
           cacheExtent: widget.cacheExtent,
           scrollDirection: widget.scrollDirection,
           physics: usedScrollPhysics,
-          children: _childrenWithKey!,
           shouldIgnorePointerWhenScrolling:
-              widget.shouldIgnorePointerWhenScrolling,
+          widget.shouldIgnorePointerWhenScrolling,
+          itemBuilder: (BuildContext context, int index) {
+            return _childrenWithKey[index];
+          },
+          itemCount: _childrenWithKey.length,
         ),
       ),
     );

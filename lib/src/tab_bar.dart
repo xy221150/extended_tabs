@@ -490,7 +490,7 @@ class _DragAnimation extends Animation<double>
 }
 
 class _TabLabelBar extends Flex {
-  const _TabLabelBar({
+   _TabLabelBar({
     Key? key,
     List<Widget> children = const <Widget>[],
     this.onPerformLayout,
